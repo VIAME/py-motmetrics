@@ -44,6 +44,10 @@ class Format(Enum):
     http://detrac-db.rit.albany.edu/download
     """
 
+    VIAME_CSV = 'viame-csv'
+    """TODO
+    """
+
 
 def load_motchallenge(fname, **kwargs):
     r"""Load MOT challenge data.
@@ -306,6 +310,69 @@ def load_detrac_xml(fname):
     return df
 
 
+def load_viame_csv(fname, **kwargs):
+    r"""Load MOT challenge data.
+
+    Params
+    ------
+    fname : str
+        Filename to load data from
+
+    Kwargs
+    ------
+    sep : str
+        Allowed field separators, defaults to '\s+|\t+|,'
+    min_confidence : float
+        Rows with confidence less than this threshold are removed.
+        Defaults to -1. You should set this to 1 when loading
+        ground truth MOTChallenge data, so that invalid rectangles in
+        the ground truth are not considered during matching.
+
+    Returns
+    ------
+    df : pandas.DataFrame
+        The returned dataframe has the following columns
+            'X', 'Y', 'Width', 'Height', 'Confidence', 'ClassId', 'Visibility'
+        The dataframe is indexed by ('FrameId', 'Id')
+    """
+    min_confidence = kwargs.pop('min_confidence', -1)
+    force_conf = kwargs.pop('force_conf', False)
+    parsedGT = []
+    with io.open(fname) as fd:
+        for line in fd.readlines():
+            if len( line ) > 0 and line[0] == '#' or line[0:9] == 'target_id':
+                continue
+            parsed_line = line.rstrip().split(',')
+            if len( parsed_line ) < 2:
+                continue
+            row = []
+            conf = float(parsed_line[7])
+            if conf < 0:
+              conf = 1.0
+            if force_conf:
+              conf = 1.0
+            class_id = 'fish'
+            min_x = float(parsed_line[3])
+            min_y = float(parsed_line[4])
+            row.append(int(parsed_line[2]))
+            row.append(int(parsed_line[0]))
+            row.append(min_x)
+            row.append(min_y)
+            row.append(float(parsed_line[5])-min_x)
+            row.append(float(parsed_line[6])-min_y)
+            row.append(conf)
+            row.append(class_id)
+            row.append(-1)
+            parsedGT.append(row)
+
+    df = pd.DataFrame(parsedGT,
+                      columns=['FrameId', 'Id', 'X', 'Y', 'Width', 'Height', 'Confidence', 'ClassId', 'Visibility'])
+    df.set_index(['FrameId', 'Id'], inplace=True)
+
+    # Remove all rows without sufficient confidence
+    return df[df['Confidence'] >= min_confidence]
+
+
 def loadtxt(fname, fmt=Format.MOT15_2D, **kwargs):
     """Load data from any known format."""
     fmt = Format(fmt)
@@ -315,7 +382,8 @@ def loadtxt(fname, fmt=Format.MOT15_2D, **kwargs):
         Format.MOT15_2D: load_motchallenge,
         Format.VATIC_TXT: load_vatictxt,
         Format.DETRAC_MAT: load_detrac_mat,
-        Format.DETRAC_XML: load_detrac_xml
+        Format.DETRAC_XML: load_detrac_xml,
+        Format.VIAME_CSV: load_viame_csv
     }
     func = switcher.get(fmt)
     return func(fname, **kwargs)

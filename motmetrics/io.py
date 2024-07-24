@@ -45,7 +45,8 @@ class Format(Enum):
     """
 
     VIAME_CSV = 'viame-csv'
-    """TODO
+    """Dawkins, Matthew et al. "An Open-Source Platform for Underwater Image and Video Analytics." Winter Conference on Applications of Computer Vision (2017).
+    https://github.com/viame/viame
     """
 
 
@@ -311,7 +312,7 @@ def load_detrac_xml(fname):
 
 
 def load_viame_csv(fname, **kwargs):
-    r"""Load MOT challenge data.
+    r"""Load VIAME CSV data.
 
     Params
     ------
@@ -320,13 +321,22 @@ def load_viame_csv(fname, **kwargs):
 
     Kwargs
     ------
-    sep : str
-        Allowed field separators, defaults to '\s+|\t+|,'
+    use_class_ids : bool
+        Use the class labels stored within the input CSVs as opposed
+        to treating everything as the same object category.
+        Defaults to True
+    use_class_confidence : bool
+        Use the class-specific scores within the CSV as opposed to the
+        generic confidence field.
+        Defaults to True
     min_confidence : float
         Rows with confidence less than this threshold are removed.
-        Defaults to -1. You should set this to 1 when loading
-        ground truth MOTChallenge data, so that invalid rectangles in
-        the ground truth are not considered during matching.
+        Defaults to -1 (unused)
+    force_conf_to_one : bool
+        Force all confidence values to 1.0 regardless of what they are in
+        the input files. Useful for loading groundtruth which may confidence
+        scores other than 1.0, but which are known to be valid.
+        Defaults to False
 
     Returns
     ------
@@ -335,33 +345,51 @@ def load_viame_csv(fname, **kwargs):
             'X', 'Y', 'Width', 'Height', 'Confidence', 'ClassId', 'Visibility'
         The dataframe is indexed by ('FrameId', 'Id')
     """
-    min_confidence = kwargs.pop('min_confidence', -1)
-    force_conf = kwargs.pop('force_conf', False)
+    use_class_ids = kwargs.pop('use_class_ids', True)
+    use_class_confidence = kwargs.pop('use_class_confidence', True)
+    min_confidence = kwargs.pop('min_confidence', -1.0)
+    force_conf_to_one = kwargs.pop('force_conf_to_one', False)
+
     parsedGT = []
     with io.open(fname) as fd:
         for line in fd.readlines():
-            if len( line ) > 0 and line[0] == '#' or line[0:9] == 'target_id':
+            if len(line) > 0 and line[0] == '#' or line[0:9] == 'target_id':
                 continue
-            parsed_line = line.rstrip().split(',')
-            if len( parsed_line ) < 2:
+            parsedLine = line.rstrip().split(',')
+            colCount = len( parsedLine )
+            if colCount  < 8:
                 continue
+            classID = 'default'
+            conf = min_confidence - 1
+            if use_class_ids or use_class_confidence:
+                if colCount < 11:
+                    continue
+                for i in range(9, colCount, 2):
+                    if not parsedLine[i] or parsedLine[i][0] == '(':
+                        break
+                    score = float(parsedLine[i+1])
+                    if score > conf:
+                        conf = score
+                        if use_class_ids:
+                            classID = parsedLine[i]
+            if not use_class_confidence:
+                conf = float(parsedLine[7])
+            if conf < min_confidence:
+                continue
+            if force_conf_to_one:
+                conf = 1.0
+            minX = float(parsedLine[3])
+            minY = float(parsedLine[4])
+
             row = []
-            conf = float(parsed_line[7])
-            if conf < 0:
-              conf = 1.0
-            if force_conf:
-              conf = 1.0
-            class_id = 'fish'
-            min_x = float(parsed_line[3])
-            min_y = float(parsed_line[4])
-            row.append(int(parsed_line[2]))
-            row.append(int(parsed_line[0]))
-            row.append(min_x)
-            row.append(min_y)
-            row.append(float(parsed_line[5])-min_x)
-            row.append(float(parsed_line[6])-min_y)
+            row.append(int(parsedLine[2]))
+            row.append(int(parsedLine[0]))
+            row.append(minX)
+            row.append(minY)
+            row.append(float(parsedLine[5])-minX)
+            row.append(float(parsedLine[6])-minY)
             row.append(conf)
-            row.append(class_id)
+            row.append(classID)
             row.append(-1)
             parsedGT.append(row)
 
@@ -369,8 +397,7 @@ def load_viame_csv(fname, **kwargs):
                       columns=['FrameId', 'Id', 'X', 'Y', 'Width', 'Height', 'Confidence', 'ClassId', 'Visibility'])
     df.set_index(['FrameId', 'Id'], inplace=True)
 
-    # Remove all rows without sufficient confidence
-    return df[df['Confidence'] >= min_confidence]
+    return df
 
 
 def loadtxt(fname, fmt=Format.MOT15_2D, **kwargs):

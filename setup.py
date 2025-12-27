@@ -17,8 +17,12 @@ here = os.path.abspath(os.path.dirname(__file__))
 with io.open(os.path.join(here, "requirements.txt")) as f:
     required = f.read().splitlines()
 
-with io.open(os.path.join(here, "Readme.md"), encoding="utf-8") as f:
-    long_description = f.read()
+readme_path = os.path.join(here, "Readme.md")
+if os.path.exists(readme_path):
+    with io.open(readme_path, encoding="utf-8") as f:
+        long_description = f.read()
+else:
+    long_description = "Metrics for multiple object tracker benchmarking."
 
 # Handle version number with optional .dev postfix when building a develop branch
 # on AppVeyor.
